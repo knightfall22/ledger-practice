@@ -1,0 +1,6 @@
+date,description,amount,currency
+2026-10-01,Coffee Shop,-4.50,EUR
+2026-10-01,Salary,3200.00,EUR
+2026-10-02,Supermarket,-62.35,EUR
+2026-10-03,Metro card,-20.00,EUR
+2026-10-03,bad row,not-a-number,EUR
