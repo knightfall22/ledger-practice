@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+﻿using System.Text.Json;
 
 namespace Ledger.Core.Tests;
 
@@ -180,5 +180,115 @@ public class UnitTest1
         Assert.Equal(match.Category, Category.Food);
     }
 
+    [Fact]
+    public void TestAllofRuleCategorization()
+    {
+        ICategorizationRule[] rules = [
+           new AmountRangeRule(-50, 25, Category.Food),
+           new KeywordRule("Metro", Category.Travel)
+        ];
 
+        var tx = new Transaction(new DateOnly(2026, 10, 10), "Metro card", 20, Currency.USD);
+
+        var categorizer = new AllOfRule(Category.Travel, rules);
+        var match = categorizer.Match(tx); 
+
+        Assert.Equal(match, Category.Travel);
+    }
+
+
+    public sealed class RuleDeserializingTests : IDisposable
+    {
+        private readonly string _path = Path.GetTempFileName();
+
+        public void Dispose() => File.Delete(_path);
+
+        private void WriteValidData()
+        {
+            string data = """
+                [
+                    { "type": "keyword", "keyword": "Coffee", "category": "Food" },
+                    { "type": "keyword", "keyword": "Supermarket", "category": "Food" },
+                    { "type": "keyword", "keyword": "Bistro", "category": "Food" },
+                    { "type": "keyword", "keyword": "Cinema", "category": "Entertainment" },
+                    { "type": "keyword", "keyword": "Wizz Air", "category": "Travel" },
+                    { "type": "keyword", "keyword": "Metro", "category": "Travel" }
+                ]
+            """;
+
+            File.WriteAllText(_path, data);
+        }
+
+        private void WriteInvalidRuleData()
+        {
+            string data = """
+                [
+                    { "type": "", "keyword": "Coffee", "category": "Food" },
+                    { "type": "micheal", "keyword": "Supermarket", "category": "Food" },
+                    { "type": "keyword", "keyword": "Bistro", "category": "Food" },
+                    { "type": "keyword", "keyword": "Cinema", "category": "Entertainment" },
+                    { "type": "keyword", "keyword": "Wizz Air", "category": "Travel" },
+                    { "type": "keyword", "keyword": "Metro", "category": "Travel" }
+                ]
+            """;
+
+            File.WriteAllText(_path, data);
+        }
+
+        private void WriteInvalidJson()
+        {
+            
+
+            File.WriteAllText(_path, "null");
+        }
+
+        [Fact]
+        public async Task Test_Rule_Deserializer()
+        {
+            try
+            {
+                WriteValidData();
+                var loader = await RuleLoader.LoadAsync(_path);
+
+                Assert.NotEmpty(loader);
+                var fisrtRule = loader![0];
+                Assert.IsType<KeywordRule>(fisrtRule);
+                
+            }
+            catch (FormatException e)
+            {
+                Console.WriteLine(e.ToString());
+            }
+        }
+
+        [Fact]
+        public async Task Test_Invalid_rule_category()
+        {
+            try
+            {
+                WriteInvalidRuleData();
+                await RuleLoader.LoadAsync(_path);
+            }
+            catch (FormatException e)
+            {
+                Assert.Contains("invalid rule", e.ToString());
+            }
+        }
+
+        [Fact]
+        public async Task Test_Invalid_json()
+        {
+            try
+            {
+                WriteInvalidJson();
+                await RuleLoader.LoadAsync(_path);
+            }
+            catch (FormatException e)
+            {
+                Assert.Contains("rule file contains null", e.ToString());
+            }
+        }
+    }
 }
+
+
