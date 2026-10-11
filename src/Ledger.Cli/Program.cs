@@ -1,28 +1,42 @@
-﻿using Ledger.Core;
+﻿using System.Text.Json;
+using Ledger.Core;
 
-if (args is not ["import", var path])
+(string? csvPath, string? rulePath) = args switch
 {
-    Console.Error.WriteLine("usage: ledger import <file.csv>");
-    return 1;
-}
-
-if (!File.Exists(path))
-{
-    Console.Error.WriteLine($"file not found: {path}");
-    return 1;
-}
-
-var (txs, badlines) = await CsvImporter.ImportAsync(path);
-
-foreach (var tx in txs)
-{
-    Console.WriteLine($"{tx.Date:yyyy-MM-dd}  {tx.Description,-20} {tx.Amount,10:N2} {tx.Currency}");
+    ["import",  var p] => (p, null),
+    ["import", var p, "--rules", var r] => (p, r),
+    _ => (null, null)
 };
 
-if (badlines.Count > 0)
-{
-    Console.Error.Write($"skipped lines: {string.Join(",", badlines)}");
+if (csvPath is null)
+{   
+    Console.Error.WriteLine("usage: ledger import <file.csv> [--rules rules.csv]");
+    return 1;
 }
 
+IReadOnlyList<ICategorizationRule> rules = [];
+if (rulePath is not null)
+{
+    try
+    {
+        rules = await RuleLoader.LoadAsync(rulePath);
+    }
+    catch (Exception ex) when (ex is FormatException or JsonException or FileNotFoundException)
+    {
+        Console.Error.WriteLine($"invalid file rule {ex.Message}");
+        return 2;
+    }
+}
 
+var categorizer = new Categorizer(rules);
+var result = await CsvImporter.ImportAsync(csvPath);
+
+foreach (var tx in result.Transactions.Select(categorizer.Categorize))
+{
+    var category = tx.Category?.ToString() ?? "-";
+    Console.WriteLine($"{tx.Date:yyyy-MM-dd}  {tx.Description,-20} {tx.Amount,10:N2} {tx.Currency}  {category}");
+}
+
+if (result.BadLines.Count > 0)
+    Console.Error.WriteLine($"skipped lines: {string.Join(", ", result.BadLines)}");
 return 0;
